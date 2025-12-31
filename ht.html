@@ -96,6 +96,7 @@
             margin-bottom: 16px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.08);
             position: relative;
+            border: 2px solid transparent;
         }
 
         .habit-header {
@@ -126,6 +127,17 @@
             margin-bottom: 16px;
         }
 
+        .habit-stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 16px;
+        }
+
+        .habit-count-section {
+            flex: 1;
+        }
+
         .habit-count {
             font-size: 56px;
             font-weight: 700;
@@ -136,7 +148,53 @@
         .habit-time {
             font-size: 20px;
             color: #86868b;
-            margin-bottom: 16px;
+        }
+
+        .check-in-section {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 8px;
+        }
+
+        .check-in-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: 3px solid;
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            transition: all 0.2s;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .check-in-btn:active {
+            transform: scale(0.95);
+        }
+
+        .check-in-btn.checked {
+            color: white;
+        }
+
+        .check-in-status {
+            font-size: 12px;
+            color: #86868b;
+            text-align: center;
+        }
+
+        .current-streak {
+            font-size: 14px;
+            color: #86868b;
+            margin-top: 8px;
+        }
+
+        .current-streak strong {
+            color: #1d1d1f;
+            font-size: 18px;
         }
 
         .habit-start {
@@ -144,6 +202,8 @@
             justify-content: space-between;
             font-size: 14px;
             color: #86868b;
+            padding-top: 16px;
+            border-top: 1px solid #e5e5e7;
         }
 
         .modal {
@@ -171,6 +231,11 @@
         @keyframes slideUp {
             from { transform: translateY(100%); }
             to { transform: translateY(0); }
+        }
+
+        @keyframes checkPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.1); }
         }
 
         .modal-content {
@@ -320,6 +385,13 @@
         .color-red { color: #ff3b30; }
         .color-pink { color: #ff2d55; }
 
+        .border-blue { border-color: #007aff; }
+        .border-green { border-color: #34c759; }
+        .border-purple { border-color: #af52de; }
+        .border-orange { border-color: #ff9500; }
+        .border-red { border-color: #ff3b30; }
+        .border-pink { border-color: #ff2d55; }
+
         .bg-blue { background: rgba(0,122,255,0.1); border-color: rgba(0,122,255,0.3); }
         .bg-green { background: rgba(52,199,89,0.1); border-color: rgba(52,199,89,0.3); }
         .bg-purple { background: rgba(175,82,222,0.1); border-color: rgba(175,82,222,0.3); }
@@ -327,9 +399,12 @@
         .bg-red { background: rgba(255,59,48,0.1); border-color: rgba(255,59,48,0.3); }
         .bg-pink { background: rgba(255,45,85,0.1); border-color: rgba(255,45,85,0.3); }
 
-        .habit-card {
-            border: 2px solid transparent;
-        }
+        .fill-blue { background: #007aff; }
+        .fill-green { background: #34c759; }
+        .fill-purple { background: #af52de; }
+        .fill-orange { background: #ff9500; }
+        .fill-red { background: #ff3b30; }
+        .fill-pink { background: #ff2d55; }
     </style>
 </head>
 <body>
@@ -413,6 +488,10 @@
         let selectedColor = 'blue';
         let editingHabitId = null;
 
+        function getTodayString() {
+            return new Date().toISOString().split('T')[0];
+        }
+
         function initEmojiGrid(gridId, onSelect) {
             const grid = document.getElementById(gridId);
             grid.innerHTML = emojis.map(emoji => 
@@ -451,7 +530,7 @@
             selectedEmoji = '⭐';
             selectedColor = 'blue';
             document.getElementById('habitName').value = '';
-            document.getElementById('startDate').value = new Date().toISOString().split('T')[0];
+            document.getElementById('startDate').value = getTodayString();
             initEmojiGrid('emojiGrid', 'selectEmoji');
             initColorGrid('colorGrid', 'selectColor');
             document.getElementById('addModal').classList.add('active');
@@ -475,7 +554,10 @@
                 name,
                 startDate: document.getElementById('startDate').value,
                 emoji: selectedEmoji,
-                color: selectedColor
+                color: selectedColor,
+                checkIns: [document.getElementById('startDate').value],
+                currentStreak: 1,
+                longestStreak: 1
             };
 
             habits.push(habit);
@@ -484,33 +566,88 @@
             renderHabits();
         }
 
-        function calculateDays(startDate) {
-            const start = new Date(startDate);
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            start.setHours(0, 0, 0, 0);
-            const diff = today - start;
-            return Math.floor(diff / (1000 * 60 * 60 * 24));
+        function calculateStats(habit) {
+            if (!habit.checkIns || habit.checkIns.length === 0) {
+                return { currentStreak: 0, longestStreak: 0, totalDays: 0 };
+            }
+
+            const sortedCheckIns = [...habit.checkIns].sort();
+            const today = getTodayString();
+            let currentStreak = 0;
+            let longestStreak = 0;
+            let tempStreak = 0;
+
+            const allDates = [];
+            let currentDate = new Date(sortedCheckIns[0]);
+            const endDate = new Date(today);
+
+            while (currentDate <= endDate) {
+                allDates.push(currentDate.toISOString().split('T')[0]);
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+
+            for (let i = allDates.length - 1; i >= 0; i--) {
+                if (sortedCheckIns.includes(allDates[i])) {
+                    currentStreak++;
+                } else {
+                    break;
+                }
+            }
+
+            tempStreak = 0;
+            for (let i = 0; i < allDates.length; i++) {
+                if (sortedCheckIns.includes(allDates[i])) {
+                    tempStreak++;
+                    longestStreak = Math.max(longestStreak, tempStreak);
+                } else {
+                    tempStreak = 0;
+                }
+            }
+
+            return {
+                currentStreak,
+                longestStreak,
+                totalDays: sortedCheckIns.length
+            };
+        }
+
+        function toggleCheckIn(habitId) {
+            const habit = habits.find(h => h.id === habitId);
+            if (!habit) return;
+
+            if (!habit.checkIns) habit.checkIns = [habit.startDate];
+
+            const today = getTodayString();
+            const checkInIndex = habit.checkIns.indexOf(today);
+
+            if (checkInIndex > -1) {
+                habit.checkIns.splice(checkInIndex, 1);
+            } else {
+                habit.checkIns.push(today);
+            }
+
+            const stats = calculateStats(habit);
+            habit.currentStreak = stats.currentStreak;
+            habit.longestStreak = stats.longestStreak;
+
+            localStorage.setItem('habits', JSON.stringify(habits));
+            renderHabits();
         }
 
         function formatTimeDescription(days) {
-            if (days === 0) return 'Started today';
-            if (days === 1) return '1 day';
-            if (days < 7) return `${days} days`;
+            if (days === 0) return 'No active streak';
+            if (days === 1) return '1 day streak';
+            if (days < 7) return `${days} day streak`;
             if (days < 30) {
                 const weeks = Math.floor(days / 7);
-                return weeks === 1 ? '1 week' : `${weeks} weeks`;
+                return weeks === 1 ? '1 week streak' : `${weeks} week streak`;
             }
             if (days < 365) {
                 const months = Math.floor(days / 30);
-                return months === 1 ? '1 month' : `${months} months`;
+                return months === 1 ? '1 month streak' : `${months} month streak`;
             }
             const years = Math.floor(days / 365);
-            const remainingDays = days % 365;
-            if (remainingDays === 0) {
-                return years === 1 ? '1 year' : `${years} years`;
-            }
-            return years === 1 ? `1 year, ${remainingDays} days` : `${years} years, ${remainingDays} days`;
+            return years === 1 ? '1 year streak' : `${years} year streak`;
         }
 
         function formatDate(dateStr) {
@@ -606,8 +743,13 @@
             }
 
             container.innerHTML = habits.map(habit => {
-                const days = calculateDays(habit.startDate);
-                const timeDesc = formatTimeDescription(days);
+                if (!habit.checkIns) habit.checkIns = [habit.startDate];
+                
+                const stats = calculateStats(habit);
+                const today = getTodayString();
+                const checkedToday = habit.checkIns.includes(today);
+                const timeDesc = formatTimeDescription(stats.currentStreak);
+
                 return `
                     <div class="habit-card bg-${habit.color}">
                         <div class="habit-header">
@@ -615,8 +757,20 @@
                             <button class="habit-menu" onclick="showContextMenu('${habit.id}', event)">⋯</button>
                         </div>
                         <div class="habit-name">${habit.name}</div>
-                        <div class="habit-count color-${habit.color}">${days}</div>
-                        <div class="habit-time">${timeDesc}</div>
+                        <div class="habit-stats">
+                            <div class="habit-count-section">
+                                <div class="habit-count color-${habit.color}">${stats.currentStreak}</div>
+                                <div class="habit-time">${timeDesc}</div>
+                                <div class="current-streak">Longest: <strong>${stats.longestStreak}</strong> days</div>
+                            </div>
+                            <div class="check-in-section">
+                                <button class="check-in-btn border-${habit.color} ${checkedToday ? 'checked fill-' + habit.color : ''}" 
+                                        onclick="toggleCheckIn('${habit.id}')">
+                                    ${checkedToday ? '✓' : ''}
+                                </button>
+                                <div class="check-in-status">${checkedToday ? 'Done today!' : 'Check in'}</div>
+                            </div>
+                        </div>
                         <div class="habit-start">
                             <span>Started</span>
                             <span>${formatDate(habit.startDate)}</span>
